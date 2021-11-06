@@ -1,0 +1,7 @@
+{
+    "port":3002,
+    "mongo":{
+        "dbName":"Post-Database"
+    },
+    "serviceName":"Post-Service"
+}

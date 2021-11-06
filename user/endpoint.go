@@ -7,9 +7,11 @@ import (
 )
 
 type AddUserEndpoint endpoint.Endpoint
+type GetUserEndpoint endpoint.Endpoint
 
-type Endpoint struct {
+type Endpoints struct {
 	AddUserEndpoint
+	GetUserEndpoint
 }
 
 type addUserRequest struct {
@@ -37,4 +39,31 @@ func (e AddUserEndpoint) AddUser(ctx context.Context, profile Profile) (err erro
 		return
 	}
 	return response.(addUserResponse).Err
+}
+
+type getUserRequest struct {
+	UserId string `json:"profile"`
+}
+
+type getUserResponse struct {
+	Err error `json:"error"`
+}
+
+func MakeGetUserEndpoint(s GetUserSvc) endpoint.Endpoint {
+	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
+		req := request.(getUserRequest)
+		err = s.GetUser(ctx, req.UserId)
+		return getUserResponse{Err: err}, nil
+	}
+}
+
+func (e GetUserEndpoint) GetUser(ctx context.Context, userId string) (err error) {
+	request := getUserRequest{
+		UserId: userId,
+	}
+	response, err := e(ctx, request)
+	if err != nil {
+		return
+	}
+	return response.(getUserResponse).Err
 }

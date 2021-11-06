@@ -1,7 +1,6 @@
-package user
+package post
 
 import (
-	chttp "Profile/transport/http"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,24 +21,17 @@ func MakeHandler(s Service, logger kitlog.Logger) http.Handler {
 		kithttp.ServerErrorLogger(logger),
 	}
 	AddUserHandler := kithttp.NewServer(
-		MakeAddUserEndpoint(s),
-		DecodeAddUserRequest,
-		chttp.EncodeResponse,
-		opts...,
-	)
-	GetUserHandler := kithttp.NewServer(
-		MakeGetUserEndpoint(s),
-		DecodeGetUserRequest,
-		chttp.EncodeResponse,
+		MakeAddPostEndpoint(s),
+		DecodeAddPostRequest,
+		encodeResponse,
 		opts...,
 	)
 	r := mux.NewRouter()
-	r.Handle("/user", AddUserHandler).Methods(http.MethodPost)
-	r.Handle("/user", GetUserHandler).Methods(http.MethodGet)
+	r.Handle("/post", AddUserHandler)
 	return r
 }
-func DecodeAddUserRequest(ctx context.Context, r *http.Request) (interface{}, error) {
-	var req addUserRequest
+func DecodeAddPostRequest(ctx context.Context, r *http.Request) (interface{}, error) {
+	var req addPostRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		return nil, ErrBadRequest
@@ -47,26 +39,11 @@ func DecodeAddUserRequest(ctx context.Context, r *http.Request) (interface{}, er
 	return req, err
 }
 
-func DecodeAddUserResponse(ctx context.Context, r *http.Response) (interface{}, error) {
-	var resp addUserResponse
-	err := chttp.DecodeResponse(ctx, r, &resp)
-	return resp, err
-}
-
-func DecodeGetUserRequest(ctx context.Context, r *http.Request) (interface{}, error) {
-	var req getUserRequest
-	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		return nil, ErrBadRequest
-	}
-	return req, err
-}
-
-func DecodeGetUserResponse(ctx context.Context, r *http.Response) (interface{}, error) {
-	var resp getUserResponse
-	err := chttp.DecodeResponse(ctx, r, &resp)
-	return resp, err
-}
+// func DecodeAddUserResponse(ctx context.Context, r *http.Response) (interface{}, error) {
+// 	var resp addUserResponse
+// 	err := chttp.DecodeResponse(ctx, r, &resp)
+// 	return resp, err
+// }
 
 func encodeResponse(ctx context.Context, w http.ResponseWriter, response interface{}) error {
 	if e, ok := response.(errorer); ok && e.error() != nil {

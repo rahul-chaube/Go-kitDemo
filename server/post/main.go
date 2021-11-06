@@ -1,31 +1,51 @@
 package main
 
 import (
-	ipUtil "Profile/common/ipUtil"
-	profilesvc "Profile/user"
+	"Profile/common/ipUtil"
+	"Profile/post"
+	userHttpClient "Profile/user/client/user/http"
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	consulsd "github.com/go-kit/kit/sd/consul"
 	stdconsul "github.com/hashicorp/consul/api"
 
 	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
 	"github.com/go-kit/kit/sd/consul"
-	stdprometheus "github.com/prometheus/client_golang/prometheus"
-
 	"github.com/go-kit/log"
+	stdopentracing "github.com/opentracing/opentracing-go"
+	stdprometheus "github.com/prometheus/client_golang/prometheus"
 )
 
 const (
-	cfgKey      = "User-Config"
-	serviceName = "User-Service"
+	cfgKey      = "Post-Config"
+	serviceName = "Post-Service"
+)
+
+var (
+	ctx          = context.Background()
+	tracer       = stdopentracing.GlobalTracer()
+	commit       string
+	buildVersion string
+	apiVersion   string
+)
+
+const (
+	retryMax     = 1
+	retryTimeout = 10 * time.Second
+)
+
+var (
+	tags = []string{"/v1.0"}
 )
 
 func main() {
-
 	consulConfig := stdconsul.DefaultConfig()
 	stdConsulClient, err := stdconsul.NewClient(consulConfig)
 	if err != nil {
@@ -38,12 +58,6 @@ func main() {
 	if kv == nil {
 		panic("Config not found")
 	}
-	// //Config
-	// config, err := configAppExpiry.New(bytes.NewBuffer(kv.Value), true)
-	// if err != nil {
-	// 	panic(err)
-	// }
-
 	//Service Discovery
 	consulClient := consul.NewClient(stdConsulClient)
 	eIp, err := ipUtil.ExternalIP()
@@ -53,7 +67,7 @@ func main() {
 	checkId := serviceName
 
 	var (
-		httpAddr = flag.String("http.addr", ":3001", "HTTP listen address")
+		httpAddr = flag.String("http.addr", ":3002", "HTTP listen address")
 	)
 	flag.Parse()
 	var logger log.Logger
@@ -62,13 +76,13 @@ func main() {
 		logger = log.With(logger, "ts", log.DefaultTimestampUTC)
 		logger = log.With(logger, "caller", log.DefaultCaller)
 	}
-	fieldKeys := []string{"method", "error_code"}
 
+	// Health Check
 	consulRegistar := consul.NewRegistrar(consulClient, &stdconsul.AgentServiceRegistration{
 		ID:      checkId,
 		Name:    serviceName,
-		Tags:    []string{"/V1.0"},
-		Port:    3001,
+		Tags:    tags,
+		Port:    3002,
 		Address: eIp,
 		Check: &stdconsul.AgentServiceCheck{
 			TTL:    "10s",
@@ -76,26 +90,38 @@ func main() {
 		},
 	}, logger)
 
-	var s profilesvc.Service
+	fieldKeys := []string{"method", "error_code"}
+
+	//service Descovery
+
+	dfTransport := http.DefaultTransport.(*http.Transport)
+	dfTransport.MaxIdleConnsPerHost = 1000
+	dfTransport.MaxIdleConns = 1000
+	dfClient := http.DefaultClient
+	dfClient.Transport = dfTransport
+
+	userIntancer := consulsd.NewInstancer(consulClient, logger, "User-Service", tags, true)
+	userService := userHttpClient.NewWithLB(userIntancer, tracer, log.NewNopLogger(), retryMax, retryTimeout, dfClient)
+	var s post.Service
 	{
-		s = profilesvc.NewService()
-		s = profilesvc.NewLoggingService(logger, s)
-		s = profilesvc.NewInstrumentingService(kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
+		s = post.NewService(userService)
+		s = post.NewLoggingService(logger, s)
+		s = post.NewInstrumentingService(kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
 			Namespace: "api",
-			Subsystem: "appexpiry_service",
+			Subsystem: "post_service",
 			Name:      "request_count",
 			Help:      "Number of requests received.",
 		}, fieldKeys),
 			kitprometheus.NewSummaryFrom(stdprometheus.SummaryOpts{
 				Namespace: "api",
-				Subsystem: "appexpiry_service",
+				Subsystem: "post_service",
 				Name:      "request_latency_seconds",
 				Help:      "Total duration of requests in seconds.",
 			}, fieldKeys), s)
 	}
 	var h http.Handler
 	{
-		h = profilesvc.MakeHandler(s, log.With(logger, "component", "HTTP"))
+		h = post.MakeHandler(s, log.With(logger, "component", "HTTP"))
 	}
 	consulRegistar.Register()
 	errs := make(chan error)
@@ -110,4 +136,5 @@ func main() {
 	}()
 
 	logger.Log("exit", <-errs)
+
 }

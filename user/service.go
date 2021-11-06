@@ -16,8 +16,12 @@ type service struct {
 type AddUserSvc interface {
 	AddUser(ctx context.Context, p Profile) error
 }
+type GetUserSvc interface {
+	GetUser(ctx context.Context, userId string) error
+}
 type Service interface {
 	AddUserSvc
+	GetUserSvc
 }
 
 func NewService() Service {
@@ -27,5 +31,9 @@ func NewService() Service {
 }
 func (s *service) AddUser(ctx context.Context, p Profile) (err error) {
 	fmt.Println("Add Service is called")
+	return
+}
+func (s *service) GetUser(ctx context.Context, userId string) (err error) {
+	fmt.Println("Get User Called *********************  ")
 	return
 }
